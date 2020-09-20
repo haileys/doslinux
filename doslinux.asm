@@ -87,10 +87,7 @@ org 0x100
     ; finished reading kernel, set obligatory kernel params:
 
     ; use our current video mode for kernel vidmode parameter
-    mov ah, 0x0f
-    int 0x10
-    movzx ax, al
-    mov [k_vidmode_w], ax
+    mov [k_vidmode_w], word 0
 
     ; we are not a registered bootloader
     mov byte [k_type_of_loader_b], 0xff
