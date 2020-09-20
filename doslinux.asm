@@ -94,26 +94,27 @@ org 0x100
 
     ; set load flags
     %define LOADED_HIGH_FLAG 0x01
-    %define CAN_USE_HEAD_FLAG 0x80 ; TODO
-    mov byte [k_loadflags_b], LOADED_HIGH_FLAG
+    %define CAN_USE_HEAP_FLAG 0x80
+    mov byte [k_loadflags_b], LOADED_HIGH_FLAG | CAN_USE_HEAP_FLAG
 
     ; no ramdisk
-    mov dword [k_ramdisk_image_d], 0
     mov dword [k_ramdisk_size_d], 0
+    mov dword [k_ramdisk_image_d], 0
 
     ; set heap end pointer - TODO is this correct?
     %define HEAP_END 0xe000
     mov word [k_heap_end_ptr_w], HEAP_END
 
-    ; cmd line pointer
-    ; just put an empty cmdline at the end of the heap for now
-    mov bx, [bzimage + HEAP_END]
-    mov [bx], byte 0
+    ; copy cmd line into place
+    mov si, cmdline
+    mov di, bzimage + HEAP_END
+    mov cx, cmdline.end - cmdline
+    rep movsb
     ; now calculate linear address for pointer
     mov ax, ds
     movzx eax, ax
     shl eax, 4
-    movzx ebx, bx
+    mov ebx, bzimage + HEAP_END
     add ebx, eax
     mov [k_cmd_line_ptr_d], ebx
 
@@ -232,6 +233,10 @@ bzimage_path db "C:\doslinux\bzimage", 0
 bzimage_open_err db "Could not open bzImage$"
 bzimage_read_err db "Could not read bzImage$"
 not_kernel_err db "bzImage is not a Linux kernel$"
+
+; reserve entire low memory region
+cmdline: db "quiet init=/doslinux/init root=/dev/sda1", 0
+    .end:
 
 gdt:
     ; entry 0x00 : null
