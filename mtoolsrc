@@ -1,0 +1,1 @@
+drive c: file="hdd.img" partition=1 mtools_skip_check=1
