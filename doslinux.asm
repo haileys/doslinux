@@ -8,7 +8,7 @@ org 0x100
     int 0x21
 
     ; check error
-    mov dx, open_err
+    mov dx, bzimage_open_err
     jc fatal
 
     ; store file handle
@@ -22,7 +22,7 @@ org 0x100
     int 0x21
 
     ; check error
-    mov dx, read_err
+    mov dx, bzimage_read_err
     jc fatal
 
     ; pull setup_sects value from header
@@ -38,7 +38,7 @@ org 0x100
     int 0x21
 
     ; check error
-    mov dx, read_err
+    mov dx, bzimage_read_err
     jc fatal
 
     ; check magic header value
@@ -67,7 +67,7 @@ org 0x100
     int 0x21
 
     ; check error
-    mov dx, read_err
+    mov dx, bzimage_read_err
     jc fatal
 
     ; do unreal copy
@@ -229,8 +229,8 @@ exit_unreal:
 ;
 
 bzimage_path db "C:\doslinux\bzimage", 0
-open_err db "Could not open bzImage$"
-read_err db "Could not read bzImage$"
+bzimage_open_err db "Could not open bzImage$"
+bzimage_read_err db "Could not read bzImage$"
 not_kernel_err db "bzImage is not a Linux kernel$"
 
 gdt:
