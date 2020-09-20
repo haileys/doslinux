@@ -178,24 +178,30 @@ init_unreal:
 ; ECX - byte count
 ; clobbers EAX
 copy_unreal:
-    ; change base of gdt data entry
-    mov eax, edi
-    and eax, ~0xfff
-    and edi, 0xfff
-    mov [gdt.data_base_0_w], ax
-    shr eax, 16
-    mov [gdt.data_base_16_b], al
-    mov [gdt.data_base_24_b], ah
+    ; zero high bits of ESI
+    movzx eax, si
+    mov esi, eax
 
-    ; ; zero high bits of ESI
-    ; movzx eax, si
-    ; mov esi, eax
+    ; save ds/es and load 32 bit segment selectors
+    call enter_unreal
+    push es
+    mov ax, 0x08
+    mov es, ax
 
-    ; ; calculate linear offset of DS and add to SI
-    ; mov eax, ds
-    ; shl eax, 4
-    ; add esi, eax
+     ; copy 4 bytes at a time:
+    add ecx, 3
+    shr ecx, 2
 
+    ; do the copy, using 32 bit address override
+    a32 rep movsd
+
+    ; restore ds/es
+    call exit_unreal
+    pop es
+
+    ret
+
+enter_unreal:
     ; load gdt to prepare to enter protected mode
     cli
     lgdt [gdtr]
@@ -205,18 +211,9 @@ copy_unreal:
     or al, 1
     mov cr0, eax
 
-    ; save ds/es and load 32 bit segment selectors
-    push es
-    mov ax, 0x08
-    mov es, ax
+    ret
 
-     ; copy 4 bytes at a time:
-    add ecx, 3
-    shr ecx, 2
-
-    ; do the copy
-    rep movsd
-
+exit_unreal:
     ; disable protected mode
     mov eax, cr0
     and al, ~1
