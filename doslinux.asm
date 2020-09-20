@@ -118,6 +118,9 @@ org 0x100
     add ebx, eax
     mov [k_cmd_line_ptr_d], ebx
 
+    ; set kernel boot params relevant to relocation
+    mov dword [k_code32_start_d], kernel_base
+
     ; calculate kernel segment
     mov ax, ds
     movzx eax, ax
@@ -264,13 +267,19 @@ bzimage_handle: dw 0
 setup_bytes: dw 0
 heap_end: dw 0
 sys_bytes: dd 0
-sys_load_ptr: dd 0x100000
+sys_load_ptr: dd kernel_base
 sys_load_end: dd 0
 
 gdtr:
     dw gdt.end - gdt - 1
 .offset:
     dd 0
+
+;
+; constants
+;
+
+kernel_base equ 0x200000
 
 ; kernel real mode header fields
 ; see https://www.kernel.org/doc/html/latest/x86/boot.html#the-real-mode-kernel-header
