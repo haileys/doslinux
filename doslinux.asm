@@ -84,8 +84,71 @@ org 0x100
     cmp eax, [sys_load_end]
     jb .sys_load_loop
 
-    ; finished reading kernel
+    ; finished reading kernel, set obligatory kernel params:
+
+    ; use our current video mode for kernel vidmode parameter
+    mov ah, 0x0f
+    int 0x10
+    movzx ax, al
+    mov [k_vidmode_w], ax
+
+    ; we are not a registered bootloader
+    mov byte [k_type_of_loader_b], 0xff
+
+    ; set load flags
+    %define LOADED_HIGH_FLAG 0x01
+    %define CAN_USE_HEAD_FLAG 0x80 ; TODO
+    mov byte [k_loadflags_b], LOADED_HIGH_FLAG
+
+    ; no ramdisk
+    mov dword [k_ramdisk_image_d], 0
+    mov dword [k_ramdisk_size_d], 0
+
+    ; set heap end pointer - TODO is this correct?
+    %define HEAP_END 0xe000
+    mov word [k_heap_end_ptr_w], HEAP_END
+
+    ; cmd line pointer
+    ; just put an empty cmdline at the end of the heap for now
+    mov bx, [bzimage + HEAP_END]
+    mov [bx], byte 0
+    ; now calculate linear address for pointer
+    mov ax, ds
+    movzx eax, ax
+    shl eax, 4
+    movzx ebx, bx
+    add ebx, eax
+    mov [k_cmd_line_ptr_d], ebx
+
+    ; calculate kernel segment
+    mov ax, ds
+    movzx eax, ax
+    shl eax, 4
+    add eax, bzimage
+    shr eax, 4
+
+    ; disable interrupts and setup segments/stack
+    cli
+    mov ss, ax
+    mov sp, HEAP_END
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; enter kernel
+    ; see https://www.kernel.org/doc/html/latest/x86/boot.html#running-the-kernel
+
+    ; kernel code seg is + 0x20
+    add ax, 0x20
+
+    ; since the segment is dynamic we need an indirect jump
+    mov bx, sp
+    sub bx, 4
+    mov [bx], word 0
+    mov [bx + 2], ax
     xchg bx, bx
+    jmp far [bx]
 
     ; return to DOS
     mov ah, 0x4c
@@ -200,6 +263,7 @@ align 4
 
 bzimage_handle: dw 0
 setup_bytes: dw 0
+heap_end: dw 0
 sys_bytes: dd 0
 sys_load_ptr: dd 0x100000
 sys_load_end: dd 0
@@ -211,9 +275,28 @@ gdtr:
 
 ; kernel real mode header fields
 ; see https://www.kernel.org/doc/html/latest/x86/boot.html#the-real-mode-kernel-header
-k_setup_sects_b     equ bzimage + 0x1f1
-k_syssize_d         equ bzimage + 0x1f4
-k_header_magic_d    equ bzimage + 0x202
+k_setup_sects_b         equ bzimage + 0x1f1
+k_syssize_d             equ bzimage + 0x1f4
+k_header_magic_d        equ bzimage + 0x202
+
+; obligatory fields - we must supply this information to kernel
+k_vidmode_w             equ bzimage + 0x1fa
+k_type_of_loader_b      equ bzimage + 0x210
+k_loadflags_b           equ bzimage + 0x211
+k_setup_move_size_w     equ bzimage + 0x212
+k_ramdisk_image_d       equ bzimage + 0x218
+k_ramdisk_size_d        equ bzimage + 0x21c
+k_heap_end_ptr_w        equ bzimage + 0x224
+k_ext_loader_type_b     equ bzimage + 0x227
+k_cmd_line_ptr_d        equ bzimage + 0x228
+
+; reloc fields - we must supply if kernel is relocated
+k_code32_start_d        equ bzimage + 0x214
+k_kernel_alignment_d    equ bzimage + 0x230
+k_relocatable_kernel_b  equ bzimage + 0x234
+k_min_alignment_b       equ bzimage + 0x235
+k_pref_address_q        equ bzimage + 0x258
+
 
 align 16
 progend:
