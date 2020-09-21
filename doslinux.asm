@@ -8,6 +8,7 @@ org 0x100
     test ax, ax
     jz start_linux
 
+run_command:
     ; doslinux is already running, invoke the run command syscall
     mov ah, 1
     int DOSLINUX_INT
@@ -209,11 +210,8 @@ vm86_return:
     call cursor_line
     mov [cursor_after_linux], ax
 
-    call fix_cursor
-
-    ; return to DOS
-    mov ah, 0x4c
-    int 0x21
+    ; now DSL is running we can run the originally invoked command
+    jmp run_command
 
 ;
 ; helper subroutines
@@ -388,7 +386,7 @@ bzimage_path db "C:\doslinux\bzimage", 0
 bzimage_open_err db "Could not open bzImage", 13, 10, "$"
 bzimage_read_err db "Could not read bzImage", 13, 10, "$"
 not_kernel_err db "bzImage is not a Linux kernel", 13, 10, "$"
-initializing db "Starting DOS subsystem for Linux, please wait...$"
+initializing db "Starting DOS Subsystem for Linux, please wait...$"
 newline db 13, 10, "$"
 
 ; reserve entire low memory region
