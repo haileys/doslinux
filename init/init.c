@@ -184,9 +184,6 @@ __attribute__((noreturn)) void exec_shell() {
 }
 
 void run_dos() {
-    // enable all port I/O for VM86 process
-    iopl(3);
-
     // open /dev/mem for mapping
     int memfd = open("/dev/mem", O_RDWR | O_SYNC);
     if (memfd < 0) {
