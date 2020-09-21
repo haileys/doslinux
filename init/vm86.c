@@ -8,14 +8,17 @@
 #include <bits/syscall.h>
 #include <fcntl.h>
 #include <linux/kd.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
-#include "vm86.h"
-#include "panic.h"
 #include "io.h"
+#include "kbd.h"
+#include "panic.h"
+#include "vm86.h"
 
 typedef union reg32 {
     uint32_t dword;
@@ -61,6 +64,7 @@ regs_t;
 
 typedef struct task {
     regs_t* regs;
+    kbd_t kbd;
     bool interrupts_enabled;
     bool pending_interrupt;
     uint8_t pending_interrupt_nr;
@@ -249,8 +253,12 @@ do_iret(task_t* task)
 }
 
 static uint8_t
-do_inb(uint16_t port)
+do_inb(task_t* task, uint16_t port)
 {
+    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+        return kbd_read_port(&task->kbd, port);
+    }
+
     uint8_t value = inb(port);
     print("inb port ");
     print16(port);
@@ -261,8 +269,14 @@ do_inb(uint16_t port)
 }
 
 static uint16_t
-do_inw(uint16_t port)
+do_inw(task_t* task, uint16_t port)
 {
+    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+        // drop it, kbd doesn't support word reads
+        (void)task;
+        return 0;
+    }
+
     uint16_t value = inw(port);
     print("inw port ");
     print16(port);
@@ -273,8 +287,14 @@ do_inw(uint16_t port)
 }
 
 static uint32_t
-do_ind(uint16_t port)
+do_ind(task_t* task, uint16_t port)
 {
+    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+        // drop it, kbd doesn't support dword reads
+        (void)task;
+        return 0;
+    }
+
     uint32_t value = ind(port);
     print("ind port ");
     print16(port);
@@ -295,13 +315,10 @@ do_outb(task_t* task, uint16_t port, uint8_t value)
         print("\n");
     }
 
-    // TODO - doslinux edit
-    // if (task->has_reset) {
-    //     if (IO_VGA_LO <= port && port <= IO_VGA_HI) {
-    //         framebuffer_outb(port, value);
-    //         return;
-    //     }
-    // }
+    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+        kbd_write_port(&task->kbd, port, value);
+        return;
+    }
 
     outb(port, value);
 }
@@ -315,14 +332,11 @@ do_outw(task_t* task, uint16_t port, uint16_t value)
     print16(value);
     print("\n");
 
-    // TODO - doslinux edit
-    // if (task->has_reset) {
-    //     if (IO_VGA_LO <= port && port <= IO_VGA_HI) {
-    //         // TODO do we ever outw to the VGA?
-    //         framebuffer_outb(port, value & 0xff);
-    //         return;
-    //     }
-    // }
+    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+        // drop it, kbd doesn't support word writes
+        (void)task;
+        return;
+    }
 
     outw(port, value);
 }
@@ -336,39 +350,36 @@ do_outd(task_t* task, uint16_t port, uint32_t value)
     print32(value);
     print("\n");
 
-    // TODO - doslinux edit
-    // if (task->has_reset) {
-    //     if (IO_VGA_LO <= port && port <= IO_VGA_HI) {
-    //         // TODO do we ever outd to the VGA?
-    //         framebuffer_outb(port, value & 0xff);
-    //         return;
-    //     }
-    // }
+    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+        // drop it, kbd doesn't support dword writes
+        (void)task;
+        return;
+    }
 
     outd(port, value);
 }
 
 static void
-do_insb(regs_t* regs)
+do_insb(task_t* task)
 {
-    poke8(regs->es16.word.lo, regs->edi.word.lo, do_inb(regs->edx.word.lo));
-    regs->edi.word.lo += 1;
+    poke8(task->regs->es16.word.lo, task->regs->edi.word.lo, do_inb(task, task->regs->edx.word.lo));
+    task->regs->edi.word.lo += 1;
 }
 
 static void
-do_insw(regs_t* regs)
+do_insw(task_t* task)
 {
-    uint16_t value = do_inw(regs->edx.word.lo);
-    poke16(regs->es16.word.lo, regs->edi.word.lo, value);
-    regs->edi.word.lo += 2;
+    uint16_t value = do_inw(task, task->regs->edx.word.lo);
+    poke16(task->regs->es16.word.lo, task->regs->edi.word.lo, value);
+    task->regs->edi.word.lo += 2;
 }
 
 static void
-do_insd(regs_t* regs)
+do_insd(task_t* task)
 {
-    uint32_t value = do_ind(regs->edx.word.lo);
-    poke32(regs->es16.word.lo, regs->edi.word.lo, value);
-    regs->edi.word.lo += 4;
+    uint32_t value = do_ind(task, task->regs->edx.word.lo);
+    poke32(task->regs->es16.word.lo, task->regs->edi.word.lo, value);
+    task->regs->edi.word.lo += 4;
 }
 
 static uint32_t
@@ -423,7 +434,7 @@ prefix:
         // INSB
         print("  INSB\n");
         REPEAT({
-            do_insb(task->regs);
+            do_insb(task);
         });
         task->regs->eip.word.lo += 1;
         return;
@@ -434,9 +445,9 @@ prefix:
 
         REPEAT({
             if (operand == BITS32) {
-                do_insd(task->regs);
+                do_insd(task);
             } else {
-                do_insw(task->regs);
+                do_insw(task);
             }
         });
 
@@ -473,16 +484,16 @@ prefix:
     case 0xe4:
         // INB imm
         print("  INB imm\n");
-        task->regs->eax.byte.lo = do_inb(peekip(task->regs, 1));
+        task->regs->eax.byte.lo = do_inb(task, peekip(task->regs, 1));
         task->regs->eip.word.lo += 2;
         return;
     case 0xe5:
         // INW imm
         print("  INW imm\n");
         if (operand == BITS32) {
-            task->regs->eax.dword = do_ind(peekip(task->regs, 1));
+            task->regs->eax.dword = do_ind(task, peekip(task->regs, 1));
         } else {
-            task->regs->eax.word.lo = do_inw(peekip(task->regs, 1));
+            task->regs->eax.word.lo = do_inw(task, peekip(task->regs, 1));
         }
         task->regs->eip.word.lo += 2;
         return;
@@ -505,16 +516,16 @@ prefix:
     case 0xec:
         // INB DX
         print("  INB DX\n");
-        task->regs->eax.byte.lo = do_inb(task->regs->edx.word.lo);
+        task->regs->eax.byte.lo = do_inb(task, task->regs->edx.word.lo);
         task->regs->eip.word.lo += 1;
         return;
     case 0xed:
         // INW DX
         print("  INW DX\n");
         if (operand == BITS32) {
-            task->regs->eax.dword = do_ind(task->regs->edx.word.lo);
+            task->regs->eax.dword = do_ind(task, task->regs->edx.word.lo);
         } else {
-            task->regs->eax.word.lo = do_inw(task->regs->edx.word.lo);
+            task->regs->eax.word.lo = do_inw(task, task->regs->edx.word.lo);
         }
         task->regs->eip.word.lo += 1;
         return;
@@ -571,10 +582,10 @@ void
 vm86_interrupt(task_t* task, uint8_t vector)
 {
     if (task->interrupts_enabled) {
-        printf("Dispatching interrupt %04x\n", vector);
+        printf("Dispatching interrupt %04x\r\n", vector);
         do_int(task, vector);
     } else {
-        printf("Setting pending interrupt %04x\n", vector);
+        printf("Setting pending interrupt %04x\r\n", vector);
         task->pending_interrupt = true;
         task->pending_interrupt_nr = vector;
     }
@@ -592,21 +603,26 @@ vm86_gpf(task_t* task)
 }
 
 static volatile sig_atomic_t
-received_irq = 0;
+received_keyboard_input = 0;
 
 static void
-on_sigio()
+on_sigio(int sig, siginfo_t* info, void* context)
 {
-    received_irq = 1;
-    write(0, "SIGIO\n", 6);
+    (void)sig;
+    (void)context;
+
+    if (info->si_fd == STDIN_FILENO && (info->si_band & POLLIN)) {
+        // data to be read on stdin
+        received_keyboard_input = 1;
+    }
 }
 
 static void
 setup_sigio()
 {
     struct sigaction sa = { 0 };
-    sa.sa_handler = on_sigio;
-    sa.sa_flags = 0;
+    sa.sa_sigaction = on_sigio;
+    sa.sa_flags = SA_SIGINFO;
     sigemptyset(&sa.sa_mask);
 
     if (sigaction(SIGIO, &sa, NULL)) {
@@ -619,12 +635,14 @@ static void
 setup_stdin()
 {
     // get raw scancodes from stdin rather than keycodes or ascii
+
     if (ioctl(STDIN_FILENO, KDSKBMODE, K_RAW)) {
         perror("set stdin raw mode");
         fatal();
     }
 
     // arrange for SIGIO to be raised when input is available
+
     if (fcntl(STDIN_FILENO, F_SETSIG, SIGIO)) {
         perror("set stdin async signal");
         fatal();
@@ -635,20 +653,20 @@ setup_stdin()
         fatal();
     }
 
-    if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK)) {
+    if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK | O_ASYNC)) {
         perror("set stdin nonblock");
         fatal();
     }
 
     // put stdin into raw mode
+
     struct termios attr;
     if (tcgetattr(STDIN_FILENO, &attr)) {
         perror("tcgetattr");
         fatal();
     }
 
-    // put terminal into raw mode
-    // see https://linux.die.net/man/3/tcgetattr
+    // see https://linux.die.net/man/3/tcgetattr for these flags
     attr.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
                         | INLCR | IGNCR | ICRNL | IXON);
     attr.c_oflag &= ~OPOST;
@@ -678,6 +696,7 @@ vm86_run(struct vm86_init init_params)
 
     task_t task = { 0 };
     task.regs = (void*)&vm86.regs;
+    kbd_init(&task.kbd);
 
     setup_sigio();
     setup_stdin();
@@ -692,8 +711,21 @@ vm86_run(struct vm86_init init_params)
 
         switch (VM86_TYPE(rc)) {
             case VM86_SIGNAL: {
-                if (received_irq) {
-                    printf("RECEIVED IRQ!\n");
+                if (received_keyboard_input) {
+                    // even if we race with a second signal here, we should
+                    // always catch the input in the read call anyway
+                    received_keyboard_input = 0;
+
+                    char buff[KBD_SCANCODE_BUFFER_SIZE];
+                    ssize_t nread = read(STDIN_FILENO, &buff, sizeof(buff));
+
+                    for (ssize_t i = 0; i < nread; i++) {
+                        kbd_send_input(&task.kbd, buff[i]);
+                    }
+
+                    if (nread > 0) {
+                        vm86_interrupt(&task, KBD_IRQ);
+                    }
                 }
                 break;
             }
