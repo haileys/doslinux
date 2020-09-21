@@ -1,0 +1,10 @@
+dosemu-*
+busybox-*
+linux-*
+
+*.o
+*.img
+*.tgz
+*.com
+
+init/init
