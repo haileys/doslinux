@@ -80,8 +80,6 @@ int install_busybox() {
 }
 
 void initialize() {
-    printf("\nHello world from DOS Subsystem for Linux!\n\n");
-
     // setup ramdisk for root partition
     // TODO - maybe a persistent ext4 fs on a loop device?
 
@@ -203,6 +201,8 @@ void run_dos() {
 
 int main() {
     initialize();
+
+    printf(" ok\n");
 
     pid_t rc = fork();
 
