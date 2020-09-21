@@ -126,9 +126,21 @@ org 0x100
     push es
     mov ax, 0x08
     mov es, ax
+
     a32 mov [es:0x100000], word vm86_return
+
     mov ax, cs
     a32 mov [es:0x100002], word ax
+
+    pushf
+    pop ax
+    a32 mov [es:0x100004], word ax
+
+    a32 mov [es:0x100006], sp
+
+    mov ax, ss
+    a32 mov [es:0x100008], word ax
+
     call exit_unreal
     pop es
 
@@ -162,7 +174,7 @@ org 0x100
     jmp far [bx]
 
 vm86_return:
-    jmp $
+    xchg bx, bx
 
     ; return to DOS
     mov ah, 0x4c
@@ -248,7 +260,7 @@ bzimage_read_err db "Could not read bzImage$"
 not_kernel_err db "bzImage is not a Linux kernel$"
 
 ; reserve entire low memory region
-cmdline: db "quiet init=/doslinux/init root=/dev/sda1", 0
+cmdline: db "quiet init=/doslinux/init root=/dev/sda1 nokaslr", 0
     .end:
 
 gdt:
