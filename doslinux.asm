@@ -144,6 +144,15 @@ org 0x100
     call exit_unreal
     pop es
 
+    ; print initializing message right before starting kernel
+    mov dx, initializing
+    mov ah, 0x09
+    int 0x21
+
+    ; save cursor pos for manually fixing up later
+    call cursor_line
+    mov [cursor_before_linux], ax
+
     ; calculate kernel segment
     mov ax, ds
     movzx eax, ax
@@ -175,6 +184,21 @@ org 0x100
 
 vm86_return:
     xchg bx, bx
+
+    ; read vga cursor position after invoking linux
+    call cursor_line
+    mov [cursor_after_linux], ax
+
+    ; print empty lines until cursor line is > cursor_after_linux to sync up
+    ; MS-DOS's idea of where the cursor is with linux's
+newline_loop:
+    mov ah, 0x09
+    mov dx, newline
+    int 0x21
+
+    call cursor_line
+    cmp ax, [cursor_after_linux]
+    jb newline_loop
 
     ; return to DOS
     mov ah, 0x4c
@@ -217,7 +241,7 @@ copy_unreal:
     mov ax, 0x08
     mov es, ax
 
-     ; copy 4 bytes at a time:
+    ; copy 4 bytes at a time:
     add ecx, 3
     shr ecx, 2
 
@@ -250,6 +274,35 @@ exit_unreal:
 
     ret
 
+; returns line cursor is on in AX
+; clobbers DX and BX
+cursor_line:
+    ; read cursor pos into bx from vga
+    mov al, 0x0f
+    mov dx, 0x3d4
+    out dx, al
+
+    mov dx, 0x3d5
+    in al, dx
+    mov bl, al
+
+    mov al, 0x0e
+    mov dx, 0x3d4
+    out dx, al
+
+    mov dx, 0x3d5
+    in al, dx
+    mov bh, al
+
+    ; calculate line
+    mov ax, bx
+    xor dx, dx
+    add ax, 79 ; for round-up division
+    mov bx, 80
+    div bx
+
+    ret
+
 ;
 ; RO data
 ;
@@ -258,6 +311,8 @@ bzimage_path db "C:\doslinux\bzimage", 0
 bzimage_open_err db "Could not open bzImage$"
 bzimage_read_err db "Could not read bzImage$"
 not_kernel_err db "bzImage is not a Linux kernel$"
+initializing db "Starting DOS subsystem for Linux, please wait...$"
+newline db 13, 10, "$"
 
 ; reserve entire low memory region
 cmdline: db "quiet init=/doslinux/init root=/dev/sda1", 0
@@ -291,6 +346,8 @@ heap_end: dw 0
 sys_bytes: dd 0
 sys_load_ptr: dd kernel_base
 sys_load_end: dd 0
+cursor_before_linux: dw 0
+cursor_after_linux: dw 0
 
 gdtr:
     dw gdt.end - gdt - 1

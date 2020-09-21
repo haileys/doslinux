@@ -198,18 +198,6 @@ void run_dos() {
     }
 
     vm86_init_t* dos = (void*)0x100000;
-    printf("CS:IP %04x:%04x, FLAGS %04x\n\n", dos->cs, dos->ip, dos->flags);
-
-    // uint8_t* vga = (void*)0xb8000;
-    // for (int y = 0; y < 25; y++) {
-    //     for (int x = 0; x < 80; x++) {
-    //         vga[(y * 80 + x) * 2 + 1] = 0x7a;
-    //     }
-    // }
-
-    uint8_t* linear_ip = (void*)((uint32_t)dos->cs * 16 + (uint32_t)dos->ip);
-    printf("%02x %02x %02x %02x\n", linear_ip[0], linear_ip[1], linear_ip[2], linear_ip[3]);
-
     vm86_run(*dos);
 }
 
@@ -235,7 +223,4 @@ int main() {
             fatal();
         }
     }
-
-    chdir("/mnt/c");
-    exec_shell();
 }
