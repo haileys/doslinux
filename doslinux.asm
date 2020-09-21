@@ -260,7 +260,7 @@ bzimage_read_err db "Could not read bzImage$"
 not_kernel_err db "bzImage is not a Linux kernel$"
 
 ; reserve entire low memory region
-cmdline: db "quiet init=/doslinux/init root=/dev/sda1 nokaslr", 0
+cmdline: db "quiet init=/doslinux/init root=/dev/sda1", 0
     .end:
 
 gdt:
