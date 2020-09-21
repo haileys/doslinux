@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <sys/io.h>
 #include <bits/syscall.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -14,16 +15,8 @@
 #include <unistd.h>
 // #include <sys/vm86.h>
 
-struct dos_state {
-    uint16_t ip;
-    uint16_t cs;
-} __attribute__((packed));
-
-__attribute__((noreturn)) void fatal() {
-    while (1) {
-        sleep(1);
-    }
-}
+#include "vm86.h"
+#include "panic.h"
 
 #define CHECKED(expr) { int rc; if ((rc = (expr)) < 0) { goto out; } }
 
@@ -190,9 +183,11 @@ __attribute__((noreturn)) void exec_shell() {
     fatal();
 }
 
-int main() {
-    initialize();
+void run_dos() {
+    // enable all port I/O for VM86 process
+    iopl(3);
 
+    // open /dev/mem for mapping
     int memfd = open("/dev/mem", O_RDWR | O_SYNC);
     if (memfd < 0) {
         perror("open mem");
@@ -200,13 +195,13 @@ int main() {
     }
 
     // map the entire first MiB of memory in :)
-    if (mmap(0, 0x110000, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED | MAP_FIXED, memfd, 0) == MAP_FAILED) {
+    if (mmap(0, 0x110000, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, memfd, 0) == MAP_FAILED) {
         perror("mmap");
         fatal();
     }
 
-    // struct dos_state* dos = (void*)0x100000;
-    // printf("CS:IP => %04x:%04x\n\n", dos->cs, dos->ip);
+    vm86_init_t* dos = (void*)0x100000;
+    printf("CS:IP %04x:%04x, FLAGS %04x\n\n", dos->cs, dos->ip, dos->flags);
 
     // uint8_t* vga = (void*)0xb8000;
     // for (int y = 0; y < 25; y++) {
@@ -215,7 +210,34 @@ int main() {
     //     }
     // }
 
-    // vm86()
+    uint8_t* linear_ip = (void*)((uint32_t)dos->cs * 16 + (uint32_t)dos->ip);
+    printf("%02x %02x %02x %02x\n", linear_ip[0], linear_ip[1], linear_ip[2], linear_ip[3]);
+
+    vm86_run(*dos);
+}
+
+int main() {
+    initialize();
+
+    pid_t rc = fork();
+
+    if (rc < 0) {
+        perror("fork vm86 proc");
+        fatal();
+    }
+
+    if (rc == 0) {
+        run_dos();
+    }
+
+    while (1) {
+        int wstat;
+        int rc = wait(&wstat);
+        if (rc < 0) {
+            perror("wait");
+            fatal();
+        }
+    }
 
     chdir("/mnt/c");
     exec_shell();
