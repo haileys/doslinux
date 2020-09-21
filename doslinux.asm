@@ -1,7 +1,27 @@
 org 0x100
 
+%define DOSLINUX_INT 0xe7
+
 ; TODO detect presence of EMM/HIMEM.sys and fail
 
+    call detect_dsl
+    test ax, ax
+    jz start_linux
+
+    ; doslinux is already running, invoke the run command syscall
+    mov ah, 1
+    int DOSLINUX_INT
+
+    ; read vga cursor position after invoking linux
+    call cursor_line
+    mov [cursor_after_linux], ax
+    call fix_cursor
+
+    ; exit
+    mov ah, 0x4c
+    int 0x21
+
+start_linux:
     ; open bzimage.com
     mov ax, 0x3d00
     mov dx, bzimage_path
@@ -189,16 +209,7 @@ vm86_return:
     call cursor_line
     mov [cursor_after_linux], ax
 
-    ; print empty lines until cursor line is > cursor_after_linux to sync up
-    ; MS-DOS's idea of where the cursor is with linux's
-newline_loop:
-    mov ah, 0x09
-    mov dx, newline
-    int 0x21
-
-    call cursor_line
-    cmp ax, [cursor_after_linux]
-    jb newline_loop
+    call fix_cursor
 
     ; return to DOS
     mov ah, 0x4c
@@ -303,14 +314,80 @@ cursor_line:
 
     ret
 
+; print empty lines until cursor line is > cursor_after_linux to sync up
+; MS-DOS's idea of where the cursor is with linux's
+fix_cursor:
+    mov ah, 0x09
+    mov dx, newline
+    int 0x21
+
+    call cursor_line
+    cmp ax, [cursor_after_linux]
+    jb fix_cursor
+
+    ret
+
+
+; detects running DSL instance
+; returns 1 if running in AX, 0 otherwise
+detect_dsl:
+    ; push flags and disable interrupts before we do anything dodgy
+    pushf
+    cli
+
+    ; set fs to zero to access IVT
+    push fs
+    xor ax, ax
+    mov fs, ax
+
+    ; save previous handler for doslinux interrupt
+    mov ax, fs:[DOSLINUX_INT * 4]
+    push ax
+    mov ax, fs:[DOSLINUX_INT * 4 + 2]
+    push ax
+
+    ; set up dummy interrupt handler so we don't crash or invoke any
+    ; unintended behaviour when calling the doslinux interrupt
+    mov fs:[DOSLINUX_INT * 4], word .dummy_handler
+    mov ax, cs
+    mov fs:[DOSLINUX_INT * 4 + 2], ax
+
+    ; hit it
+    xor ax, ax
+    int DOSLINUX_INT
+    mov [.is_running], ax
+
+    ; restore previous interrupt handler
+    pop ax
+    mov fs:[DOSLINUX_INT * 4 + 2], ax
+    pop ax
+    mov fs:[DOSLINUX_INT * 4], ax
+
+    ; restore previous fs
+    pop fs
+
+    ; restore flags
+    popf
+
+    ; test ax
+    mov ax, [.is_running]
+
+    ret
+
+.is_running dw 0
+
+.dummy_handler:
+    mov [.is_running], word 0
+    iret
+
 ;
 ; RO data
 ;
 
 bzimage_path db "C:\doslinux\bzimage", 0
-bzimage_open_err db "Could not open bzImage$"
-bzimage_read_err db "Could not read bzImage$"
-not_kernel_err db "bzImage is not a Linux kernel$"
+bzimage_open_err db "Could not open bzImage", 13, 10, "$"
+bzimage_read_err db "Could not read bzImage", 13, 10, "$"
+not_kernel_err db "bzImage is not a Linux kernel", 13, 10, "$"
 initializing db "Starting DOS subsystem for Linux, please wait...$"
 newline db 13, 10, "$"
 
