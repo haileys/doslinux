@@ -43,7 +43,7 @@ kbd_read_port(kbd_t* kbd, uint16_t port)
                 status |= KBD_STATUS_HAS_DATA;
             }
 
-            printf("reading kbd status: %02x\r\n", status);
+            // printf("reading kbd status: %02x\r\n", status);
 
             return status;
         }
@@ -56,10 +56,28 @@ kbd_read_port(kbd_t* kbd, uint16_t port)
 void
 kbd_write_port(kbd_t* kbd, uint16_t port, uint8_t value)
 {
-    // TODO what do - drop it for now
     (void)kbd;
-    (void)port;
-    (void)value;
+
+    switch (port) {
+        case KBD_STATUS_PORT: {
+            switch (value) {
+                case 0xae: {
+                    // enable first ps/2 port (keyboard)
+                    // no-op for now
+                    break;
+                }
+                default: {
+                    printf("unknown keyboard command: %02x\r\n", value);
+                    break;
+                }
+            }
+            break;
+        }
+        default: {
+            printf("unknown keyboard write: port %04x value %02x\r\n", port, value);
+            break;
+        }
+    }
 }
 
 void

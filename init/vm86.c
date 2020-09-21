@@ -6,19 +6,20 @@
 
 #include <bits/signal.h>
 #include <bits/syscall.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/kd.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/io.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
-#include "io.h"
-#include "kbd.h"
 #include "panic.h"
 #include "vm86.h"
+#include "kbd.h"
 
 typedef union reg32 {
     uint32_t dword;
@@ -65,7 +66,6 @@ regs_t;
 typedef struct task {
     regs_t* regs;
     kbd_t kbd;
-    bool interrupts_enabled;
     bool pending_interrupt;
     uint8_t pending_interrupt_nr;
 }
@@ -87,23 +87,23 @@ print(const char* s)
     printf("%s", s);
 }
 
-static void
-print8(uint8_t u)
-{
-    printf("%02x", u);
-}
+// static void
+// print8(uint8_t u)
+// {
+//     printf("%02x", u);
+// }
 
-static void
-print16(uint16_t u)
-{
-    printf("%04x", u);
-}
+// static void
+// print16(uint16_t u)
+// {
+//     printf("%04x", u);
+// }
 
-static void
-print32(uint32_t u)
-{
-    printf("%08x", u);
-}
+// static void
+// print32(uint32_t u)
+// {
+//     printf("%08x", u);
+// }
 
 static void*
 linear(uint16_t segment, uint16_t offset)
@@ -124,12 +124,6 @@ static void
 poke8(uint16_t segment, uint16_t offset, uint8_t value)
 {
     *(uint8_t*)linear(segment, offset) = value;
-}
-
-static uint16_t
-peek16(uint16_t segment, uint16_t offset)
-{
-    return *(uint16_t*)linear(segment, offset);
 }
 
 static void
@@ -164,51 +158,12 @@ push16(regs_t* regs, uint16_t value)
     poke16(regs->ss.word.lo, regs->esp.word.lo, value);
 }
 
-static uint16_t
-pop16(regs_t* regs)
-{
-    uint16_t value = peek16(regs->ss.word.lo, regs->esp.word.lo);
-    regs->esp.word.lo += 2;
-    return value;
-}
-
-static void
-do_pushf(task_t* task)
-{
-    uint16_t flags = task->regs->eflags.word.lo;
-    if (task->interrupts_enabled) {
-        flags |= FLAG_INTERRUPT;
-    } else {
-        flags &= ~FLAG_INTERRUPT;
-    }
-    push16(task->regs, flags);
-}
-
 static void do_pending_int(task_t* task);
-
-static void
-do_popf(task_t* task)
-{
-    uint16_t flags = pop16(task->regs);
-    // copy IF flag to variable
-    if (flags & FLAG_INTERRUPT) {
-        task->interrupts_enabled = true;
-    } else {
-        task->interrupts_enabled = false;
-    }
-    task->regs->eflags.word.lo = flags;
-    // force interrupts on in real eflags
-    task->regs->eflags.word.lo |= FLAG_INTERRUPT;
-
-    if (task->interrupts_enabled) {
-        do_pending_int(task);
-    }
-}
 
 static void
 do_int(task_t* task, uint8_t vector)
 {
-    do_pushf(task);
+    push16(task->regs, task->regs->eflags.word.lo);
     push16(task->regs, task->regs->cs.word.lo);
     push16(task->regs, task->regs->eip.word.lo);
     struct ivt_descr* descr = &IVT[vector];
@@ -244,119 +199,120 @@ do_pending_int(task_t* task)
     }
 }
 
-static void
-do_iret(task_t* task)
+static bool
+is_port_whitelisted(uint16_t port)
 {
-    task->regs->eip.dword = pop16(task->regs);
-    task->regs->cs.word.lo = pop16(task->regs);
-    do_popf(task);
+    // ports whitelisted here are directly accessed by DOS rather than through
+    // BIOS. we need to do something about them eventually, but for now just
+    // let access succeed without intervention.
+
+    // primary ATA
+    if (port >= 0x1f0 && port <= 0x1f7) {
+        return true;
+    }
+
+    // secondary ATA
+    if (port >= 0x170 && port <= 0x177) {
+        return true;
+    }
+
+    // VGA
+    if (port >= 0x3b0 && port <= 0x3df) {
+        return true;
+    }
+
+    // floppy disk
+    if (port >= 0x3f0 && port <= 0x3f7) {
+        return true;
+    }
+
+    return false;
 }
 
 static uint8_t
 do_inb(task_t* task, uint16_t port)
 {
-    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+    if (port >= KBD_PORT_LO && port <= KBD_PORT_HI) {
         return kbd_read_port(&task->kbd, port);
     }
 
     uint8_t value = inb(port);
-    print("inb port ");
-    print16(port);
-    print(" => ");
-    print8(value);
-    print("\n");
+
+    if (!is_port_whitelisted(port)) {
+        printf("inb port %04x value %02x cs:ip %04x:%04x\r\n",
+            port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
+    }
+
     return value;
 }
 
 static uint16_t
 do_inw(task_t* task, uint16_t port)
 {
-    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
-        // drop it, kbd doesn't support word reads
-        (void)task;
-        return 0;
+    uint16_t value = inw(port);
+
+    if (!is_port_whitelisted(port)) {
+        printf("inw port %04x value %04x cs:ip %04x:%04x\r\n",
+            port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
     }
 
-    uint16_t value = inw(port);
-    print("inw port ");
-    print16(port);
-    print(" => ");
-    print16(value);
-    print("\n");
     return value;
 }
 
 static uint32_t
 do_ind(task_t* task, uint16_t port)
 {
-    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
-        // drop it, kbd doesn't support dword reads
-        (void)task;
-        return 0;
+    uint32_t value = inl(port);
+
+    if (!is_port_whitelisted(port)) {
+        // printf("ind port %04x value %08x cs:ip %04x:%04x\r\n",
+        //     port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
     }
 
-    uint32_t value = ind(port);
-    print("ind port ");
-    print16(port);
-    print(" => ");
-    print32(value);
-    print("\n");
     return value;
 }
 
 static void
 do_outb(task_t* task, uint16_t port, uint8_t value)
 {
-    if (port != 0x20 || value != 0x20) {
-        print("outb port ");
-        print16(port);
-        print(" <= ");
-        print8(value);
-        print("\n");
-    }
-
-    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
+    if (port >= KBD_PORT_LO && port <= KBD_PORT_HI) {
         kbd_write_port(&task->kbd, port, value);
         return;
     }
 
-    outb(port, value);
+    if (port == 0x20) {
+        // ignore pic writes, they mess with stuff
+        return;
+    }
+
+    if (!is_port_whitelisted(port)) {
+        printf("outb port %04x value %02x cs:ip %04x:%04x\r\n",
+            port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
+    }
+
+    outb(value, port);
 }
 
 static void
 do_outw(task_t* task, uint16_t port, uint16_t value)
 {
-    print("outw port ");
-    print16(port);
-    print(" <= ");
-    print16(value);
-    print("\n");
-
-    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
-        // drop it, kbd doesn't support word writes
-        (void)task;
-        return;
+    if (!is_port_whitelisted(port)) {
+        printf("outw port %04x value %04x cs:ip %04x:%04x\r\n",
+            port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
     }
 
-    outw(port, value);
+    outw(value, port);
 }
 
 static void
 do_outd(task_t* task, uint16_t port, uint32_t value)
 {
-    print("outd port ");
-    print16(port);
-    print(" <= ");
-    print32(value);
-    print("\n");
-
-    if (KBD_PORT_LO <= port && port <= KBD_PORT_HI) {
-        // drop it, kbd doesn't support dword writes
-        (void)task;
-        return;
+    if (!is_port_whitelisted(port)) {
+        printf("outd port %04x value %08x cs:ip %04x:%04x\r\n",
+            port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
     }
 
-    outd(port, value);
+    outl(value, port);
 }
 
 static void
@@ -409,6 +365,10 @@ prefix:
             operand = BITS32;
             task->regs->eip.word.lo++;
             goto prefix;
+        case 0x67:
+            address = BITS32;
+            task->regs->eip.word.lo++;
+            goto prefix;
         case 0xf3:
             rep_kind = REP;
             task->regs->eip.word.lo++;
@@ -432,16 +392,16 @@ prefix:
         panic("O32 prefix in GPF'd instruction");
     case 0x6c: {
         // INSB
-        print("  INSB\n");
+
         REPEAT({
             do_insb(task);
         });
+
         task->regs->eip.word.lo += 1;
         return;
     }
     case 0x6d: {
         // INSW
-        print("  INSW\n");
 
         REPEAT({
             if (operand == BITS32) {
@@ -454,20 +414,6 @@ prefix:
         task->regs->eip.word.lo += 1;
         return;
     }
-    case 0x9c: {
-        print("  PUSHF\n");
-        // PUSHF
-        do_pushf(task);
-        task->regs->eip.word.lo += 1;
-        return;
-    }
-    case 0x9d: {
-        print("  POPF\n");
-        // POPF
-        do_popf(task);
-        task->regs->eip.word.lo += 1;
-        return;
-    }
     case 0xcd: {
         // INT imm
         print("  INT\n");
@@ -476,20 +422,13 @@ prefix:
         do_software_int(task, vector);
         return;
     }
-    case 0xcf:
-        // IRET
-        print("  IRET\n");
-        do_iret(task);
-        return;
     case 0xe4:
         // INB imm
-        print("  INB imm\n");
         task->regs->eax.byte.lo = do_inb(task, peekip(task->regs, 1));
         task->regs->eip.word.lo += 2;
         return;
     case 0xe5:
         // INW imm
-        print("  INW imm\n");
         if (operand == BITS32) {
             task->regs->eax.dword = do_ind(task, peekip(task->regs, 1));
         } else {
@@ -499,13 +438,11 @@ prefix:
         return;
     case 0xe6:
         // OUTB imm
-        print("  OUTB imm\n");
         do_outb(task, peekip(task->regs, 1), task->regs->eax.byte.lo);
         task->regs->eip.word.lo += 2;
         return;
     case 0xe7:
         // OUTW imm
-        print("  OUTW imm\n");
         if (operand == BITS32) {
             do_outd(task, peekip(task->regs, 1), task->regs->eax.dword);
         } else {
@@ -515,13 +452,11 @@ prefix:
         return;
     case 0xec:
         // INB DX
-        print("  INB DX\n");
         task->regs->eax.byte.lo = do_inb(task, task->regs->edx.word.lo);
         task->regs->eip.word.lo += 1;
         return;
     case 0xed:
         // INW DX
-        print("  INW DX\n");
         if (operand == BITS32) {
             task->regs->eax.dword = do_ind(task, task->regs->edx.word.lo);
         } else {
@@ -531,13 +466,11 @@ prefix:
         return;
     case 0xee:
         // OUTB DX
-        print("  OUTB DX\n");
         do_outb(task, task->regs->edx.word.lo, task->regs->eax.byte.lo);
         task->regs->eip.word.lo += 1;
         return;
     case 0xef:
         // OUTW DX
-        print("  OUTW DX\n");
         if (operand == BITS32) {
             do_outd(task, task->regs->edx.word.lo, task->regs->eax.dword);
         } else {
@@ -548,25 +481,12 @@ prefix:
     case 0xf4: {
         // HLT
         print("  HLT\n");
-        if (!task->interrupts_enabled) {
+        if (!(task->regs->eflags.word.lo & FLAG_INTERRUPT)) {
             panic("8086 task halted CPU with interrupts disabled");
         }
         task->regs->eip.word.lo += 1;
         return;
     }
-    case 0xfa:
-        // CLI
-        print("  CLI\n");
-        task->interrupts_enabled = false;
-        task->regs->eip.word.lo += 1;
-        return;
-    case 0xfb:
-        // STI
-        print("  STI\n");
-        task->interrupts_enabled = true;
-        task->regs->eip.word.lo += 1;
-        do_pending_int(task);
-        return;
     default:
         printf("[%04x:%04x] unknown instruction in gpf: %02x\n",
             task->regs->cs.word.lo,
@@ -581,8 +501,8 @@ prefix:
 void
 vm86_interrupt(task_t* task, uint8_t vector)
 {
-    if (task->interrupts_enabled) {
-        printf("Dispatching interrupt %04x\r\n", vector);
+    if (task->regs->eflags.word.lo & FLAG_INTERRUPT) {
+        // printf("Dispatching interrupt %04x\r\n", vector);
         do_int(task, vector);
     } else {
         printf("Setting pending interrupt %04x\r\n", vector);
@@ -692,7 +612,7 @@ vm86_run(struct vm86_init init_params)
     vm86.regs.ds = init_params.ss;
     vm86.regs.es = init_params.ss;
     vm86.regs.fs = init_params.ss;
-    vm86.cpu_type = 3;
+    vm86.cpu_type = 2; // cannot emulate 386 as we rely on port I/O trapping
 
     task_t task = { 0 };
     task.regs = (void*)&vm86.regs;
@@ -707,7 +627,13 @@ vm86_run(struct vm86_init init_params)
     // }
 
     while (1) {
+        // set IOPL=0 before returning to DOS so we can intercept port I/O
+        iopl(0);
+
         int rc = syscall(SYS_vm86, VM86_ENTER, &vm86);
+
+        // and then reenable it for the supervisor
+        iopl(3);
 
         switch (VM86_TYPE(rc)) {
             case VM86_SIGNAL: {
@@ -716,52 +642,70 @@ vm86_run(struct vm86_init init_params)
                     // always catch the input in the read call anyway
                     received_keyboard_input = 0;
 
-                    char buff[KBD_SCANCODE_BUFFER_SIZE];
-                    ssize_t nread = read(STDIN_FILENO, &buff, sizeof(buff));
+                    while (1) {
+                        char buff[16];
+                        ssize_t nread = read(STDIN_FILENO, &buff, sizeof(buff));
 
-                    for (ssize_t i = 0; i < nread; i++) {
-                        kbd_send_input(&task.kbd, buff[i]);
-                    }
+                        if (nread < 0 && errno == EAGAIN) {
+                            break;
+                        }
 
-                    if (nread > 0) {
-                        vm86_interrupt(&task, KBD_IRQ);
+                        if (nread == 0) {
+                            // eof? what to do...
+                            break;
+                        }
+
+                        for (ssize_t i = 0; i < nread; i++) {
+                            kbd_send_input(&task.kbd, buff[i]);
+                        }
+
+                        if (nread > 0) {
+                            // IRQ #1 is ivec 9 - TODO handle PIC remapping
+                            vm86_interrupt(&task, 0x09);
+                        }
                     }
                 }
                 break;
             }
             case VM86_UNKNOWN: {
-                printf("VM86 GPF\n");
+                // printf("VM86 GPF\n");
                 vm86_gpf(&task);
                 break;
             }
             case VM86_INTx: {
-                // printf("VM86_INTx: %02x (at %04x:%04x)\n",
-                //     VM86_ARG(rc), task.regs->cs.word.lo, task.regs->eip.word.lo);
+                uint8_t vector = VM86_ARG(rc);
+                uint8_t ah = task.regs->eax.byte.hi;
 
-                // printf("  bytes around site:\n   ");
-                // for (int i = -8; i < 9; i++) {
-                //     if (i == 0) {
-                //         printf(" ->");
-                //     }
-                //     printf(" %02x", ((uint8_t*)linear(task.regs->cs.word.lo, task.regs->eip.word.lo))[i]);
-                // }
-                // printf("\n");
+                if (vector == 0x16) {
+                    // BIOS keyboard services
+                    do_software_int(&task, VM86_ARG(rc));
+                    break;
+                }
+
+                if (vector == 0x15 && ah == 0x4f) {
+                    // keyboard intercept
+                    do_software_int(&task, VM86_ARG(rc));
+                    break;
+                }
+
+                if (vector == 0x1a && ah <= 0x0f) {
+                    // BIOS time services
+                    do_software_int(&task, VM86_ARG(rc));
+                    break;
+                }
+
+                // log all non-whitelisted software interrupts
+                printf("VM86_INTx: %02x AX=%04x CS:IP=%04x:%04x)\r\n",
+                    VM86_ARG(rc), task.regs->eax.word.lo, task.regs->cs.word.lo, task.regs->eip.word.lo);
 
                 do_software_int(&task, VM86_ARG(rc));
-
-                // printf("  bytes around handler:\n   ");
-                // for (int i = -8; i < 9; i++) {
-                //     if (i == 0) {
-                //         printf(" ->");
-                //     }
-                //     printf(" %02x", ((uint8_t*)linear(task.regs->cs.word.lo, task.regs->eip.word.lo))[i]);
-                // }
-                // printf("\n");
+                break;
 
                 break;
             }
             case VM86_STI: {
-                printf("VM86_STI\n");
+                printf("VM86_STI\r\n");
+                do_pending_int(&task);
                 break;
             }
             case VM86_PICRETURN: {
