@@ -16,10 +16,14 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "panic.h"
 #include "vm86.h"
 #include "kbd.h"
+#include "vga.h"
+
+#define DOSLINUX_INT 0xe7
 
 typedef union reg32 {
     uint32_t dword;
@@ -612,7 +616,12 @@ vm86_run(struct vm86_init init_params)
     vm86.regs.ds = init_params.ss;
     vm86.regs.es = init_params.ss;
     vm86.regs.fs = init_params.ss;
-    vm86.cpu_type = 2; // cannot emulate 386 as we rely on port I/O trapping
+
+    // cannot emulate 386 as we rely on port I/O trapping
+    vm86.cpu_type = 2;
+
+    // make sure we always trap DOSLINUX_INT
+    vm86.int_revectored.__map[DOSLINUX_INT >> 5] |= 1 << (DOSLINUX_INT & 0x1f);
 
     task_t task = { 0 };
     task.regs = (void*)&vm86.regs;
@@ -635,6 +644,9 @@ vm86_run(struct vm86_init init_params)
         // and then reenable it for the supervisor
         iopl(3);
 
+        // DOS may have moved the cursor, fix up our idea of where it is if so
+        vga_fix_cursor();
+
         switch (VM86_TYPE(rc)) {
             case VM86_SIGNAL: {
                 if (received_keyboard_input) {
@@ -643,7 +655,7 @@ vm86_run(struct vm86_init init_params)
                     received_keyboard_input = 0;
 
                     while (1) {
-                        char buff[16];
+                        char buff[1];
                         ssize_t nread = read(STDIN_FILENO, &buff, sizeof(buff));
 
                         if (nread < 0 && errno == EAGAIN) {
@@ -676,6 +688,36 @@ vm86_run(struct vm86_init init_params)
                 uint8_t vector = VM86_ARG(rc);
                 uint8_t ah = task.regs->eax.byte.hi;
 
+                if (vector == 0xe7) {
+                    // doslinux syscall
+
+                    switch (ah) {
+                        case 0: {
+                            // presence test
+                            task.regs->eax.word.lo = 1;
+                            break;
+                        }
+                        case 1: {
+                            // run command
+                            uint32_t prog_base = (uint32_t)task.regs->cs.word.lo << 4;
+                            uint8_t* psp = (uint8_t*)prog_base;
+
+                            size_t cmdline_len = psp[0x80];
+                            uint8_t* cmdline_raw = psp + 0x81;
+
+                            char cmdline[256] = { 0 };
+                            memcpy(cmdline, cmdline_raw, cmdline_len);
+
+                            printf("cmdline: \"%s\"\r\n", cmdline);
+                        }
+                        default: {
+                            break;
+                        }
+                    }
+
+                    break;
+                }
+
                 if (vector == 0x16) {
                     // BIOS keyboard services
                     do_software_int(&task, VM86_ARG(rc));
@@ -699,8 +741,6 @@ vm86_run(struct vm86_init init_params)
                     VM86_ARG(rc), task.regs->eax.word.lo, task.regs->cs.word.lo, task.regs->eip.word.lo);
 
                 do_software_int(&task, VM86_ARG(rc));
-                break;
-
                 break;
             }
             case VM86_STI: {
