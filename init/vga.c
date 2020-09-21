@@ -27,4 +27,5 @@ vga_fix_cursor()
 {
     struct vga_pos pos = vga_cursor_pos();
     printf("\033[%d;%dH", pos.y + 1, pos.x + 1);
+    fflush(stdout);
 }

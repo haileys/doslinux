@@ -7,21 +7,20 @@
 #include <bits/signal.h>
 #include <bits/syscall.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <linux/kd.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/io.h>
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <unistd.h>
 #include <string.h>
+#include <sys/io.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
-#include "panic.h"
-#include "vm86.h"
 #include "kbd.h"
+#include "panic.h"
+#include "term.h"
 #include "vga.h"
+#include "vm86.h"
 
 #define DOSLINUX_INT 0xe7
 
@@ -558,50 +557,8 @@ setup_sigio()
 static void
 setup_stdin()
 {
-    // get raw scancodes from stdin rather than keycodes or ascii
-
-    if (ioctl(STDIN_FILENO, KDSKBMODE, K_RAW)) {
-        perror("set stdin raw mode");
-        fatal();
-    }
-
-    // arrange for SIGIO to be raised when input is available
-
-    if (fcntl(STDIN_FILENO, F_SETSIG, SIGIO)) {
-        perror("set stdin async signal");
-        fatal();
-    }
-
-    if (fcntl(STDIN_FILENO, F_SETOWN, getpid())) {
-        perror("set stdin owner");
-        fatal();
-    }
-
-    if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK | O_ASYNC)) {
-        perror("set stdin nonblock");
-        fatal();
-    }
-
-    // put stdin into raw mode
-
-    struct termios attr;
-    if (tcgetattr(STDIN_FILENO, &attr)) {
-        perror("tcgetattr");
-        fatal();
-    }
-
-    // see https://linux.die.net/man/3/tcgetattr for these flags
-    attr.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
-                        | INLCR | IGNCR | ICRNL | IXON);
-    attr.c_oflag &= ~OPOST;
-    attr.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    attr.c_cflag &= ~(CSIZE | PARENB);
-    attr.c_cflag |= CS8;
-
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &attr)) {
-        perror("tcsetattr");
-        fatal();
-    }
+    term_init();
+    term_raw_mode();
 }
 
 __attribute__((noreturn)) void
@@ -708,7 +665,43 @@ vm86_run(struct vm86_init init_params)
                             char cmdline[256] = { 0 };
                             memcpy(cmdline, cmdline_raw, cmdline_len);
 
-                            printf("cmdline: \"%s\"\r\n", cmdline);
+                            // flip terminal into normal mode for the duration of the command
+                            term_normal_mode();
+
+                            pid_t child = fork();
+
+                            if (child < 0) {
+                                perror("fork");
+                                break;
+                            }
+
+                            if (child == 0) {
+                                char sh[] = "sh";
+                                char opt_c[] = "-c";
+                                char* argv[] = { sh, opt_c, cmdline, NULL };
+
+                                char path[] = "PATH=/usr/bin:/usr/sbin:/bin:/sbin";
+                                char* envp[] = { path, NULL };
+
+                                execve("/bin/busybox", argv, envp);
+                            }
+
+                            while (1) {
+                                int wstat;
+                                int rc = waitpid(child, &wstat, 0);
+
+                                if (rc < 0) {
+                                    perror("waitpid");
+                                    break;
+                                }
+
+                                if (WIFEXITED(wstat)) {
+                                    break;
+                                }
+                            }
+
+                            // and return to raw mode
+                            term_raw_mode();
                         }
                         default: {
                             break;
