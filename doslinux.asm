@@ -121,6 +121,17 @@ org 0x100
     ; set kernel boot params relevant to relocation
     mov dword [k_code32_start_d], kernel_base
 
+    ; write CS:IP of vm86_return into somewhere init can grab it from
+    call enter_unreal
+    push es
+    mov ax, 0x08
+    mov es, ax
+    a32 mov [es:0x100000], word vm86_return
+    mov ax, cs
+    a32 mov [es:0x100002], word ax
+    call exit_unreal
+    pop es
+
     ; calculate kernel segment
     mov ax, ds
     movzx eax, ax
@@ -148,8 +159,10 @@ org 0x100
     sub bx, 4
     mov [bx], word 0
     mov [bx + 2], ax
-    xchg bx, bx
     jmp far [bx]
+
+vm86_return:
+    jmp $
 
     ; return to DOS
     mov ah, 0x4c
@@ -222,9 +235,6 @@ exit_unreal:
     mov eax, cr0
     and al, ~1
     mov cr0, eax
-
-    ; restore ds/es
-    pop es
 
     ret
 
