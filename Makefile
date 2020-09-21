@@ -26,7 +26,7 @@ doslinux.com: doslinux.asm
 initrd/initrd.img:
 	make -C initrd initrd.img
 
-init/init: init/init.o init/vm86.o init/panic.o
+init/init: init/init.o init/vm86.o init/panic.o init/kbd.o
 	$(CC) $(CFLAGS) -o $@ $^
 	$(STRIP) $@
 
