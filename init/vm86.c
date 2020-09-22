@@ -90,24 +90,6 @@ print(const char* s)
     printf("%s", s);
 }
 
-// static void
-// print8(uint8_t u)
-// {
-//     printf("%02x", u);
-// }
-
-// static void
-// print16(uint16_t u)
-// {
-//     printf("%04x", u);
-// }
-
-// static void
-// print32(uint32_t u)
-// {
-//     printf("%08x", u);
-// }
-
 static void*
 linear(uint16_t segment, uint16_t offset)
 {
@@ -170,7 +152,6 @@ do_int(task_t* task, uint8_t vector)
     push16(task->regs, task->regs->cs.word.lo);
     push16(task->regs, task->regs->eip.word.lo);
     struct ivt_descr* descr = &IVT[vector];
-    // printf("  handler for softint at %04x:%04x\n", descr->segment, descr->offset);
     task->regs->cs.word.lo = descr->segment;
     task->regs->eip.dword = descr->offset;
 }
@@ -178,18 +159,6 @@ do_int(task_t* task, uint8_t vector)
 static void
 do_software_int(task_t* task, uint8_t vector)
 {
-    // TODO - doslinux edit
-    // if (!task->has_reset && vector == 0x7f) {
-    //     // guest issued reset syscall
-    //     // we're done with our real mode initialisation
-    //     task->has_reset = true;
-
-    //     print("SYSCALL: reset\n");
-    //     lomem_reset();
-    //     framebuffer_reset();
-    //     return;
-    // }
-
     do_int(task, vector);
 }
 
@@ -226,6 +195,11 @@ is_port_whitelisted(uint16_t port)
 
     // floppy disk
     if (port >= 0x3f0 && port <= 0x3f7) {
+        return true;
+    }
+
+    // dunno what this is, but it's read from a bunch
+    if (port == 0x608) {
         return true;
     }
 
@@ -268,8 +242,8 @@ do_ind(task_t* task, uint16_t port)
     uint32_t value = inl(port);
 
     if (!is_port_whitelisted(port)) {
-        // printf("ind port %04x value %08x cs:ip %04x:%04x\r\n",
-        //     port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
+        printf("ind port %04x value %08x cs:ip %04x:%04x\r\n",
+            port, value, task->regs->cs.word.lo, task->regs->eip.word.lo);
     }
 
     return value;
@@ -591,11 +565,6 @@ vm86_run(struct vm86_init init_params)
     setup_sigio();
     setup_stdin();
 
-    // if (syscall(SYS_vm86, VM86_REQUEST_IRQ, (SIGIO << 8) | 0x16)) {
-    //     perror("request IRQ 0x16");
-    //     fatal();
-    // }
-
     while (1) {
         // set IOPL=0 before returning to DOS so we can intercept port I/O
         iopl(0);
@@ -616,8 +585,8 @@ vm86_run(struct vm86_init init_params)
                     received_keyboard_input = 0;
 
                     while (1) {
-                        char buff[1];
-                        ssize_t nread = read(STDIN_FILENO, &buff, sizeof(buff));
+                        char scancode;
+                        ssize_t nread = read(STDIN_FILENO, &scancode, 1);
 
                         if (nread < 0 && errno == EAGAIN) {
                             break;
@@ -628,14 +597,10 @@ vm86_run(struct vm86_init init_params)
                             break;
                         }
 
-                        for (ssize_t i = 0; i < nread; i++) {
-                            kbd_send_input(&task.kbd, buff[i]);
-                        }
+                        kbd_send_input(&task.kbd, scancode);
 
-                        if (nread > 0) {
-                            // IRQ #1 is ivec 9 - TODO handle PIC remapping
-                            vm86_interrupt(&task, 0x09);
-                        }
+                        // IRQ #1 is ivec 9 - TODO handle PIC remapping
+                        vm86_interrupt(&task, 0x09);
                     }
                 }
                 break;
