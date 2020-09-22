@@ -19,7 +19,6 @@
 #include "kbd.h"
 #include "panic.h"
 #include "term.h"
-#include "vga.h"
 #include "vm86.h"
 
 #define DOSLINUX_INT 0xe7
@@ -551,16 +550,12 @@ setup_sigio()
     }
 }
 
-static void
-setup_stdin()
-{
-    term_init();
-    term_raw_mode();
-}
-
 __attribute__((noreturn)) void
 vm86_run(struct vm86_init init_params)
 {
+    // need elevated port privileges for init
+    iopl(3);
+
     struct vm86plus_struct vm86 = { 0 };
     vm86.regs.cs = init_params.cs;
     vm86.regs.eip = init_params.ip;
@@ -582,7 +577,8 @@ vm86_run(struct vm86_init init_params)
     kbd_init(&task.kbd);
 
     setup_sigio();
-    setup_stdin();
+    term_init();
+    term_yield_to_dos();
 
     while (1) {
         // set IOPL=0 before returning to DOS so we can intercept port I/O
@@ -592,9 +588,6 @@ vm86_run(struct vm86_init init_params)
 
         // and then reenable it for the supervisor
         iopl(3);
-
-        // DOS may have moved the cursor, fix up our idea of where it is if so
-        vga_fix_cursor();
 
         switch (VM86_TYPE(rc)) {
             case VM86_SIGNAL: {
@@ -654,8 +647,8 @@ vm86_run(struct vm86_init init_params)
                             char cmdline[256] = { 0 };
                             memcpy(cmdline, cmdline_raw, cmdline_len);
 
-                            // flip terminal into normal mode for the duration of the command
-                            term_normal_mode();
+                            // acquire ownership of the terminal
+                            term_acquire();
 
                             pid_t child = fork();
 
@@ -689,8 +682,8 @@ vm86_run(struct vm86_init init_params)
                                 }
                             }
 
-                            // and return to raw mode
-                            term_raw_mode();
+                            // yield terminal ownership back to DOS
+                            term_yield_to_dos();
                         }
                         default: {
                             break;

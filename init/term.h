@@ -5,9 +5,9 @@ void
 term_init();
 
 void
-term_raw_mode();
+term_acquire();
 
 void
-term_normal_mode();
+term_yield_to_dos();
 
 #endif
