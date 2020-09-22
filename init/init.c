@@ -80,6 +80,14 @@ int install_busybox() {
 }
 
 void initialize() {
+    // remount hard drive as rw and sync
+    // sync is needed so that linux does not defer disk writes and MS-DOS can
+    // see them immediately
+    if (mount("", "/", "vfat", MS_REMOUNT | MS_SYNCHRONOUS, NULL)) {
+        perror("remount root");
+        fatal();
+    }
+
     // setup ramdisk for root partition
     // TODO - maybe a persistent ext4 fs on a loop device?
 
