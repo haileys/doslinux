@@ -483,11 +483,15 @@ prefix:
         return;
     case 0xf4: {
         // HLT
-        print("  HLT\n");
+
         if (!(task->regs->eflags.word.lo & FLAG_INTERRUPT)) {
             panic("8086 task halted CPU with interrupts disabled");
         }
+
+        // just no-op on HLT for now
+
         task->regs->eip.word.lo += 1;
+
         return;
     }
     default:
@@ -644,6 +648,7 @@ vm86_run(struct vm86_init init_params)
             case VM86_INTx: {
                 uint8_t vector = VM86_ARG(rc);
                 uint8_t ah = task.regs->eax.byte.hi;
+                uint16_t ax = task.regs->eax.word.lo;
 
                 if (vector == 0xe7) {
                     // doslinux syscall
@@ -719,6 +724,17 @@ vm86_run(struct vm86_init init_params)
 
                 if (vector == 0x15 && ah == 0x4f) {
                     // keyboard intercept
+                    do_software_int(&task, VM86_ARG(rc));
+                    break;
+                }
+
+                if (vector == 0x15 && ax == 0x5305) {
+                    // APM cpu idle
+                    break;
+                }
+
+                if (vector == 0x13 && ah == 0x02) {
+                    // disk - read sectors into memory
                     do_software_int(&task, VM86_ARG(rc));
                     break;
                 }
