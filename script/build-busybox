@@ -1,0 +1,24 @@
+#!/bin/bash -e
+
+BUSYBOX=busybox-1.32.0
+
+cd "$(dirname "$0")/.."
+
+if [ ! -e "$BUSYBOX.tar.bz2" ]; then
+    echo "+++ Downloading $BUSYBOX.tar.bz2"
+    wget "https://busybox.net/downloads/$BUSYBOX.tar.bz2"
+fi
+
+if [ ! -d "$BUSYBOX" ]; then
+    echo "+++ Extracting $BUSYBOX.tar.bz2"
+    tar xf "$BUSYBOX.tar.bz2"
+fi
+
+echo "+++ Configuring $BUSYBOX"
+
+cp busybox-config "$BUSYBOX/.config"
+
+echo "+++ Building $BUSYBOX"
+
+cd "$BUSYBOX"
+make -j "$J"

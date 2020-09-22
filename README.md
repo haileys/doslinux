@@ -8,11 +8,14 @@ A WSL alternative for users who prefer an MS-DOS environment.
 
 ## Building
 
-* Clone and build Linux 5.8.9 under `linux-5.8.9/`. Use the `linux-config-doslinux` file in the root of this repo as your `.config`
+* You will need a cross toolchain targeting `i386-linux-musl` on `PATH`.
 
-* Clone and build Busybox 1.32.0 under `busybox-1.32.0`. Use `busybox-config` likewise
+  https://github.com/richfelker/musl-cross-make is a tool that can build one for you with minimal hassle. Set `TARGET` to `i386-linux-musl`.
 
-* You will also need an installed copy of MS-DOS in `hdd.base.img`.
+* Build the prequisites (Linux and Busybox) by running `J=xxx script/build-prereq`, replacing `xxx` with the desired build parallelism.
+
+* You will need a hard drive image `hdd.base.img` with an installed copy of MS-DOS on the first partition.
 
 * Run `make`
 
+  This will produce a new hard drive image `hdd.img` with DOS Subsystem for Linux installed. Invoke `C:\doslinux\dsl <command>` to run Linux commands. `C:\doslinux` can also be placed on your DOS `PATH` for greater convenience.
