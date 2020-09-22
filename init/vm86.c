@@ -178,6 +178,17 @@ is_port_whitelisted(uint16_t port)
     // BIOS. we need to do something about them eventually, but for now just
     // let access succeed without intervention.
 
+    // programmable interrupt controller
+    if (port == 0x20 || port == 0x21 || port == 0xa0 || port == 0xa1) {
+        return true;
+    }
+
+    // programmable interval timer
+    if (port >= 0x40 && port <= 0x43) {
+        // TODO should we handle timing ourselves? it might mess with linux
+        return true;
+    }
+
     // primary ATA
     if (port >= 0x1f0 && port <= 0x1f7) {
         return true;
@@ -198,7 +209,15 @@ is_port_whitelisted(uint16_t port)
         return true;
     }
 
-    // dunno what this is, but it's read from a bunch
+    // dunno what these are
+    if (port >= 0x1ce && port <= 0x1cf) {
+        return true;
+    }
+
+    if (port == 0x402) {
+        return true;
+    }
+
     if (port == 0x608) {
         return true;
     }
