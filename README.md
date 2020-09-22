@@ -4,7 +4,11 @@ A WSL alternative for users who prefer an MS-DOS environment.
 
 ![](screenshot.png)
 
-[Video](https://charlie.su/doslinux_demo-f5c2031c25d47a.mp4)
+## Videos
+
+* [Basic commands](https://charlie.su/doslinux_demo-f5c2031c25d47a.mp4)
+
+* [Two way filesystem access](https://charlie.su/doslinux_two_way_filesystem-35aadae02ad5ec.mp4)
 
 ## Building
 
