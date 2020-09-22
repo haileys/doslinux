@@ -368,6 +368,16 @@ prefix:
             rep_kind = REP;
             task->regs->eip.word.lo++;
             goto prefix;
+
+        // segment overrides, just ignore:
+        case 0x2e: // cs
+        case 0x3e: // ds
+        case 0x26: // es
+        case 0x36: // ss
+        case 0x64: // fs
+        case 0x65: // gs
+            goto prefix;
+
         default:
             break;
     }
