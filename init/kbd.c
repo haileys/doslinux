@@ -73,6 +73,10 @@ kbd_write_port(kbd_t* kbd, uint16_t port, uint8_t value)
             }
             break;
         }
+        case 0x61: {
+            // unknown but DOS writes to it
+            break;
+        }
         default: {
             printf("unknown keyboard write: port %04x value %02x\r\n", port, value);
             break;
