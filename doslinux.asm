@@ -19,14 +19,19 @@ org 0x100
     int 0x21
 
 no_xms:
-
     ; detect already running instance of WSL
     call detect_dsl
     test ax, ax
     jz start_linux
 
 run_command:
-    ; doslinux is already running, invoke the run command syscall
+    ; doslinux is already running, prepare to run linux command
+
+    ; flush disk first
+    mov ah, 0x0d
+    int 0x21
+
+    ; invoke the run command syscall
     mov ah, 1
     int DOSLINUX_INT
 
