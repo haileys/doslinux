@@ -1,0 +1,24 @@
+#!/bin/bash -e
+
+LINUX=linux-5.8.9
+
+cd "$(dirname "$0")/.."
+
+if [ ! -e "$LINUX.tar.gz" ]; then
+    echo "+++ Downloading $LINUX.tar.gz"
+    wget "https://cdn.kernel.org/pub/linux/kernel/v5.x/$LINUX.tar.gz"
+fi
+
+if [ ! -d "$LINUX" ]; then
+    echo "+++ Extracting $LINUX.tar.gz"
+    tar xf "$LINUX.tar.gz"
+fi
+
+echo "+++ Configuring $LINUX"
+
+cp linux-config-doslinux "$LINUX/.config"
+
+echo "+++ Building $LINUX"
+
+cd "$LINUX"
+make -j "$J"
