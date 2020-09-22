@@ -2,6 +2,8 @@
 
 A WSL alternative for users who prefer an MS-DOS environment.
 
+_Note:  This project runs Linux under DOS, it does not run DOS under Linux.  This project follows the naming convention of WSL (Windows Subsystem for Linux)._
+
 ![](https://charlie.su/screenshot-ff6abe24cd4858.png)
 
 ## Videos
