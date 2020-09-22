@@ -1,7 +1,9 @@
 #include <bits/signal.h>
 #include <fcntl.h>
 #include <linux/kd.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <sys/io.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -9,8 +11,23 @@
 #include "panic.h"
 #include "term.h"
 
+#define SCREEN_WIDTH 80
+#define SCREEN_HEIGHT 25
+
 static struct termios normal_term;
 static struct termios raw_term;
+
+static int
+vga_cursor_line()
+{
+    uint16_t raw_pos = 0;
+    outb(0x0f, 0x3d4);
+    raw_pos |= inb(0x3d5);
+    outb(0x0e, 0x3d4);
+    raw_pos |= (uint16_t)inb(0x3d5) << 8;
+
+    return raw_pos / SCREEN_WIDTH;
+}
 
 void
 term_init()
@@ -32,7 +49,7 @@ term_init()
 }
 
 void
-term_raw_mode()
+term_yield_to_dos()
 {
     // get raw scancodes from stdin rather than keycodes or ascii
 
@@ -67,7 +84,7 @@ term_raw_mode()
 }
 
 void
-term_normal_mode()
+term_acquire()
 {
     // select translated keyboard mode
 
@@ -89,4 +106,10 @@ term_normal_mode()
         perror("tcsetattr");
         fatal();
     }
+
+    // replicate VGA cursor position in console
+
+    int line = vga_cursor_line();
+    printf("\033[%d;%dH", line + 1, 1);
+    fflush(stdout);
 }

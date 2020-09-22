@@ -25,7 +25,7 @@ hdd.img: hdd.base.img doslinux.com init/init $(LINUX_IMAGE) $(BUSYBOX_BIN)
 doslinux.com: doslinux.asm
 	$(NASM) -o $@ -f bin $<
 
-init/init: init/init.o init/vm86.o init/panic.o init/kbd.o init/vga.o init/term.o
+init/init: init/init.o init/vm86.o init/panic.o init/kbd.o init/term.o
 	$(CC) $(CFLAGS) -o $@ $^
 	$(STRIP) $@
 

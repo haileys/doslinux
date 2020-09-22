@@ -30,9 +30,7 @@ run_command:
     mov ah, 1
     int DOSLINUX_INT
 
-    ; read vga cursor position after invoking linux
-    call cursor_line
-    mov [cursor_after_linux], ax
+    ; replicate linux cursor position in BIOS
     call fix_cursor
 
     ; exit
@@ -187,10 +185,6 @@ start_linux:
     mov ah, 0x09
     int 0x21
 
-    ; save cursor pos for manually fixing up later
-    call cursor_line
-    mov [cursor_before_linux], ax
-
     ; calculate kernel segment
     mov ax, ds
     movzx eax, ax
@@ -222,10 +216,6 @@ start_linux:
 
 vm86_return:
     xchg bx, bx
-
-    ; read vga cursor position after invoking linux
-    call cursor_line
-    mov [cursor_after_linux], ax
 
     ; now DSL is running we can run the originally invoked command
     jmp run_command
@@ -300,7 +290,7 @@ exit_unreal:
 
     ret
 
-; returns line cursor is on in AX
+; returns line VGA cursor is on in AL, 0 indexed
 ; clobbers DX and BX
 cursor_line:
     ; read cursor pos into bx from vga
@@ -327,18 +317,19 @@ cursor_line:
     mov bx, 80
     div bx
 
+    xor ah, ah
+
     ret
 
-; print empty lines until cursor line is > cursor_after_linux to sync up
-; MS-DOS's idea of where the cursor is with linux's
+; replicate VGA cursor pos in BIOS
 fix_cursor:
-    mov ah, 0x09
-    mov dx, newline
-    int 0x21
-
     call cursor_line
-    cmp ax, [cursor_after_linux]
-    jb fix_cursor
+
+    mov dh, al ; line number
+    xor dl, dl ; column
+    xor bh, bh ; page number (?)
+    mov ah, 0x02 ; set cursor pos
+    int 0x10
 
     ret
 
@@ -408,7 +399,7 @@ initializing db "Starting DOS Subsystem for Linux, please wait...$"
 newline db 13, 10, "$"
 
 ; reserve entire low memory region
-cmdline: db "quiet init=/doslinux/init root=/dev/sda1", 0
+cmdline: db "quiet init=/doslinux/init root=/dev/sda1 nomodeset no-scroll", 0
     .end:
 
 gdt:
@@ -439,7 +430,6 @@ heap_end: dw 0
 sys_bytes: dd 0
 sys_load_ptr: dd kernel_base
 sys_load_end: dd 0
-cursor_before_linux: dw 0
 cursor_after_linux: dw 0
 
 gdtr:
