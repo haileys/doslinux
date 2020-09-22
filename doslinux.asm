@@ -2,8 +2,25 @@ org 0x100
 
 %define DOSLINUX_INT 0xe7
 
-; TODO detect presence of EMM/HIMEM.sys and fail
+    ; detect XMS (eg HIMEM.SYS) and bail if present
+    mov ax, 0x4300
+    int 0x2f
+    xchg bx, bx
+    cmp al, 0x80
+    jne no_xms
 
+    ; print error message if XMS found
+    mov dx, xms_not_supported
+    mov ah, 0x09
+    int 0x21
+
+    ; exit
+    mov ah, 0x4c
+    int 0x21
+
+no_xms:
+
+    ; detect already running instance of WSL
     call detect_dsl
     test ax, ax
     jz start_linux
@@ -382,6 +399,7 @@ detect_dsl:
 ; RO data
 ;
 
+xms_not_supported db "Extended memory manager detected (maybe HIMEM.SYS?) - cannot start DOS Subsystem for Linux", 13, 10, "$"
 bzimage_path db "C:\doslinux\bzimage", 0
 bzimage_open_err db "Could not open bzImage", 13, 10, "$"
 bzimage_read_err db "Could not read bzImage", 13, 10, "$"
