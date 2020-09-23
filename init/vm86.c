@@ -552,7 +552,11 @@ do_syscall(task_t* task)
                         break;
                     }
 
-                    *linux_dir_ptr++ = current_dos_path[i];
+                    if (current_dos_path[i] == '\\') {
+                        *linux_dir_ptr++ = '/';
+                    } else {
+                        *linux_dir_ptr++ = current_dos_path[i];
+                    }
                 }
 
                 *linux_dir_ptr++ = 0;
