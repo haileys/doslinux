@@ -728,7 +728,10 @@ vm86_run(struct vm86_init init_params)
                 break;
             }
             case VM86_PICRETURN: {
-                printf("VM86_PICRETURN\n");
+                // this can only happen if vm86plus_info_struct.force_return_for_pic
+                // is set, and this field is never set by us, set by the kernel, or
+                // even set by dosemu it seems. this just shouldn't happen.
+                panic("VM86_PICRETURN should never occur");
                 break;
             }
             case VM86_TRAP: {
