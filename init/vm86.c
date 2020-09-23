@@ -77,12 +77,6 @@ enum bit_size {
     BITS32 = 1,
 };
 
-static void
-print(const char* s)
-{
-    printf("%s", s);
-}
-
 static void*
 linear(uint16_t segment, uint16_t offset)
 {
