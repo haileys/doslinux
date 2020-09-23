@@ -1,6 +1,6 @@
 # DOS Subsystem for Linux
 
-A WSL alternative for users who prefer an MS-DOS environment.
+A WSL alternative for users who prefer an MS-DOS environment. DOS Subsystem for Linux integrates a real Linux environment into MS-DOS systems, allowing users to make use of both DOS and Linux applications from the DOS command prompt.
 
 ![](https://charlie.su/screenshot-a0a0fbb6317dd5.png)
 
