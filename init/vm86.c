@@ -671,7 +671,6 @@ vm86_run(struct vm86_init init_params)
                 break;
             }
             case VM86_UNKNOWN: {
-                // printf("VM86 GPF\n");
                 vm86_gpf(&task);
                 break;
             }
@@ -716,7 +715,7 @@ vm86_run(struct vm86_init init_params)
                 }
 
                 // log all non-whitelisted software interrupts
-                printf("VM86_INTx: %02x AX=%04x CS:IP=%04x:%04x)\r\n",
+                printf("VM86_INTx: %02x AX=%04x CS:IP=%04x:%04x\r\n",
                     VM86_ARG(rc), task.regs->eax.word.lo, task.regs->cs.word.lo, task.regs->eip.word.lo);
 
                 do_software_int(&task, VM86_ARG(rc));
