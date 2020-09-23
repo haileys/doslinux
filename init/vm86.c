@@ -386,9 +386,6 @@ prefix:
     } while (0)
 
     switch (peekip(task->regs, 0)) {
-    case 0x66:
-        // o32 prefix
-        panic("O32 prefix in GPF'd instruction");
     case 0x6c: {
         // INSB
 
