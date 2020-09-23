@@ -508,6 +508,72 @@ vm86_gpf(task_t* task)
     task->regs->eflags.dword &= ~(0xf << 12);
 }
 
+static void
+do_syscall(task_t* task)
+{
+    uint8_t ah = task->regs->eax.byte.hi;
+
+    switch (ah) {
+        case 0: {
+            // presence test
+            task->regs->eax.word.lo = 1;
+            break;
+        }
+        case 1: {
+            // run command
+            uint32_t prog_base = (uint32_t)task->regs->cs.word.lo << 4;
+            uint8_t* psp = (uint8_t*)prog_base;
+
+            size_t cmdline_len = psp[0x80];
+            uint8_t* cmdline_raw = psp + 0x81;
+
+            char cmdline[256] = { 0 };
+            memcpy(cmdline, cmdline_raw, cmdline_len);
+
+            // acquire ownership of the terminal
+            term_acquire();
+
+            pid_t child = fork();
+
+            if (child < 0) {
+                perror("fork");
+                break;
+            }
+
+            if (child == 0) {
+                char sh[] = "sh";
+                char opt_c[] = "-c";
+                char* argv[] = { sh, opt_c, cmdline, NULL };
+
+                char path[] = "PATH=/usr/bin:/usr/sbin:/bin:/sbin";
+                char* envp[] = { path, NULL };
+
+                execve("/bin/busybox", argv, envp);
+            }
+
+            while (1) {
+                int wstat;
+                int rc = waitpid(child, &wstat, 0);
+
+                if (rc < 0) {
+                    perror("waitpid");
+                    break;
+                }
+
+                if (WIFEXITED(wstat)) {
+                    break;
+                }
+            }
+
+            // yield terminal ownership back to DOS
+            term_yield_to_dos();
+        }
+        default: {
+            break;
+        }
+    }
+}
+
 static volatile sig_atomic_t
 received_keyboard_input = 0;
 
@@ -616,67 +682,7 @@ vm86_run(struct vm86_init init_params)
 
                 if (vector == 0xe7) {
                     // doslinux syscall
-
-                    switch (ah) {
-                        case 0: {
-                            // presence test
-                            task.regs->eax.word.lo = 1;
-                            break;
-                        }
-                        case 1: {
-                            // run command
-                            uint32_t prog_base = (uint32_t)task.regs->cs.word.lo << 4;
-                            uint8_t* psp = (uint8_t*)prog_base;
-
-                            size_t cmdline_len = psp[0x80];
-                            uint8_t* cmdline_raw = psp + 0x81;
-
-                            char cmdline[256] = { 0 };
-                            memcpy(cmdline, cmdline_raw, cmdline_len);
-
-                            // acquire ownership of the terminal
-                            term_acquire();
-
-                            pid_t child = fork();
-
-                            if (child < 0) {
-                                perror("fork");
-                                break;
-                            }
-
-                            if (child == 0) {
-                                char sh[] = "sh";
-                                char opt_c[] = "-c";
-                                char* argv[] = { sh, opt_c, cmdline, NULL };
-
-                                char path[] = "PATH=/usr/bin:/usr/sbin:/bin:/sbin";
-                                char* envp[] = { path, NULL };
-
-                                execve("/bin/busybox", argv, envp);
-                            }
-
-                            while (1) {
-                                int wstat;
-                                int rc = waitpid(child, &wstat, 0);
-
-                                if (rc < 0) {
-                                    perror("waitpid");
-                                    break;
-                                }
-
-                                if (WIFEXITED(wstat)) {
-                                    break;
-                                }
-                            }
-
-                            // yield terminal ownership back to DOS
-                            term_yield_to_dos();
-                        }
-                        default: {
-                            break;
-                        }
-                    }
-
+                    do_syscall(&task);
                     break;
                 }
 
