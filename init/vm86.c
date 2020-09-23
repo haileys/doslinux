@@ -732,7 +732,7 @@ vm86_run(struct vm86_init init_params)
                 break;
             }
             case VM86_TRAP: {
-                printf("VM86_TRAP\n");
+                // ignore
                 break;
             }
             default: {
