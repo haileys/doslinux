@@ -2,7 +2,7 @@
 
 A WSL alternative for users who prefer an MS-DOS environment.
 
-![](https://charlie.su/screenshot-9caef156cbbadc.png)
+![](https://charlie.su/screenshot-a0a0fbb6317dd5.png)
 
 ## Videos
 
