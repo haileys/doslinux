@@ -3,6 +3,7 @@ CFLAGS = -m32 -static -Os -Wall -Wextra
 NASM = nasm
 STRIP = i386-linux-musl-strip
 
+HDD_BASE = hdd.base.img
 LINUX_BZIMAGE = linux-5.8.9/arch/x86/boot/bzImage
 BUSYBOX_BIN = busybox-1.32.0/busybox_unstripped
 
@@ -13,8 +14,8 @@ all: hdd.img
 clean:
 	rm -f hdd.img doslinux.com init/init init/*.o
 
-hdd.img: hdd.base.img doslinux.com init/init $(LINUX_IMAGE) $(BUSYBOX_BIN)
-	cp hdd.base.img hdd.img
+hdd.img: $(HDD_BASE) doslinux.com init/init $(LINUX_IMAGE) $(BUSYBOX_BIN)
+	cp $(HDD_BASE) hdd.img
 	MTOOLSRC=mtoolsrc mmd C:/doslinux
 	MTOOLSRC=mtoolsrc mcopy doslinux.com C:/doslinux/dsl.com
 	MTOOLSRC=mtoolsrc mcopy init/init C:/doslinux/init
