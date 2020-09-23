@@ -1,9 +1,3 @@
-// #include "io.h"
-// #include "kernel.h"
-// #include "task.h"
-// #include "debug.h"
-// #include "framebuffer.h"
-
 #include <bits/signal.h>
 #include <bits/syscall.h>
 #include <errno.h>
