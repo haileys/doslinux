@@ -2,10 +2,21 @@ org 0x100
 
 %define DOSLINUX_INT 0xe7
 
+    ; get current default drive
+    mov ah, 0x19
+    int 0x21
+    add al, 'a' ; interrupt returns drive index, not letter in AL
+    mov [current_drive], al
+
+    ; get current directory, returns pointer to ASCIZ string in DS:SI
+    mov ah, 0x47
+    xor dl, dl ; default drive
+    mov si, current_dir_buffer
+    int 0x21
+
     ; detect XMS (eg HIMEM.SYS) and bail if present
     mov ax, 0x4300
     int 0x2f
-    xchg bx, bx
     cmp al, 0x80
     jne no_xms
 
@@ -33,6 +44,8 @@ run_command:
 
     ; invoke the run command syscall
     mov ah, 1
+    mov dl, [current_drive]
+    mov si, current_dir_buffer
     int DOSLINUX_INT
 
     ; replicate linux cursor position in BIOS
@@ -432,11 +445,16 @@ align 4
 bzimage_handle: dw 0
 setup_bytes: dw 0
 heap_end: dw 0
+
+align 4
 sys_bytes: dd 0
 sys_load_ptr: dd kernel_base
 sys_load_end: dd 0
-cursor_after_linux: dw 0
 
+current_drive: db 0
+current_dir_buffer: times 64 db 0
+
+align 4
 gdtr:
     dw gdt.end - gdt - 1
 .offset:

@@ -521,18 +521,50 @@ do_syscall(task_t* task)
         }
         case 1: {
             // run command
-            uint32_t prog_base = (uint32_t)task->regs->cs.word.lo << 4;
-            uint8_t* psp = (uint8_t*)prog_base;
 
+            // first acquire ownership of the terminal
+            term_acquire();
+
+            uint32_t prog_base = (uint32_t)task->regs->cs.word.lo << 4;
+
+            // extract command to execute out of PSP
+            uint8_t* psp = (uint8_t*)prog_base;
             size_t cmdline_len = psp[0x80];
             uint8_t* cmdline_raw = psp + 0x81;
 
             char cmdline[256] = { 0 };
             memcpy(cmdline, cmdline_raw, cmdline_len);
 
-            // acquire ownership of the terminal
-            term_acquire();
+            // extract current DOS drive from DL and path from SI
+            char current_dos_drive = task->regs->edx.byte.lo;
 
+            if (current_dos_drive >= 'a' && current_dos_drive <= 'z') {
+                const char* current_dos_path = linear(task->regs->cs.word.lo, task->regs->esi.word.lo);
+
+                char linux_dir[70] = "/mnt/";
+                char* linux_dir_ptr = linux_dir + 5;
+
+                *linux_dir_ptr++ = current_dos_drive;
+                *linux_dir_ptr++ = '/';
+
+                for (size_t i = 0; i < 64; i++) {
+                    if (current_dos_path[i] == 0) {
+                        break;
+                    }
+
+                    *linux_dir_ptr++ = current_dos_path[i];
+                }
+
+                *linux_dir_ptr++ = 0;
+
+                int rc = chdir(linux_dir);
+
+                if (rc < 0) {
+                    perror("warn: cannot chdir");
+                }
+            }
+
+            // execute the command
             pid_t child = fork();
 
             if (child < 0) {
