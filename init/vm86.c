@@ -413,14 +413,6 @@ prefix:
         task->regs->eip.word.lo += 1;
         return;
     }
-    case 0xcd: {
-        // INT imm
-        print("  INT\n");
-        uint16_t vector = peekip(task->regs, 1);
-        task->regs->eip.word.lo += 2;
-        do_software_int(task, vector);
-        return;
-    }
     case 0xe4:
         // INB imm
         task->regs->eax.byte.lo = do_inb(task, peekip(task->regs, 1));
