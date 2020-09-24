@@ -12,6 +12,10 @@ A WSL alternative for users who prefer an MS-DOS environment. DOS Subsystem for 
 
 * Build the prequisites (Linux and Busybox) by running `J=xxx script/build-prereq`, replacing `xxx` with the desired build parallelism.
 
+* You will need nasm version 2.15 or later to build doslinux.asm.  Ubuntu 20.04 and lower are known to be using an older version [i.e. 2.14.xx] which isn't compatible so you may need to build this from source.
+
+* MTools.  If you are using Ubuntu this can be obtained with ``` apt install mtools ```.
+
 * You will need a hard drive image `hdd.base.img` with an installed copy of MS-DOS on the first partition.
 
 * Run `make`
