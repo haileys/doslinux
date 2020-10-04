@@ -1,7 +1,7 @@
-CC = i386-linux-musl-gcc
+CC = i686-linux-musl-gcc
 CFLAGS = -m32 -static -Os -Wall -Wextra
 NASM = nasm
-STRIP = i386-linux-musl-strip
+STRIP = i686-linux-musl-strip
 
 HDD_BASE = hdd.base.img
 LINUX_BZIMAGE = linux-5.8.9/arch/x86/boot/bzImage
