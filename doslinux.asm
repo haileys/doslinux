@@ -415,7 +415,7 @@ initializing db "Starting DOS Subsystem for Linux, please wait...$"
 newline db 13, 10, "$"
 
 ; reserve entire low memory region
-cmdline: db "quiet init=/doslinux/init root=/dev/sda1 "
+cmdline: db "init=/doslinux/init root=/dev/sda1 "
 
             ; kernel should scroll in software rather than hardware, DOS/BIOS
             ; only scrolls in software:
